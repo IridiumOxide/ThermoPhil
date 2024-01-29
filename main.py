@@ -47,6 +47,12 @@ c2h2 = Mixture({
 c2h6 = Mixture({
     "c2h6": 1,
 })
+an = Mixture({
+    "an": 1,
+})
+oil = Mixture({
+    "oil": 1,
+})
 
 # END OF MIXTURE DEFINITIONS
 
@@ -100,6 +106,19 @@ for,c2h6,20076.,24465.,0.,c,2,h,6
 {density_string}
 stop"""
 
+
+def oil_input(com_string, density_string):
+    return f"""for,an,-87270.,46.41,0.,h,4,n,2,o,3
+for,oil,-10600.,16.49,0.,c,1,h,2
+
+{com_string}
+
+order,h2o,n2,co2,o2,no,na2,co,h2,hco,nh3,
+
+{density_string}
+
+stop"""
+
 # END OF INPUT TEMPLATES
 
 
@@ -109,6 +128,7 @@ class Result:
     pressure: float             # atm
     temperature: float          # K
     enthalpy: float             # cal/g
+    specific_volume: float      # cm3/g
 
     product_c: float            # mol/kg
     product_c2n: float          # mol/kg
@@ -133,6 +153,7 @@ class Result:
             "pressure": self.pressure,
             "temperature": self.temperature,
             "enthalpy": self.enthalpy,
+            "specific_volume": self.specific_volume,
             "product_c": self.product_c,
             "product_c2n": self.product_c2n,
             "product_ch4": self.product_ch4,
@@ -157,6 +178,7 @@ class Result:
             self.pressure,
             self.temperature,
             self.enthalpy,
+            self.specific_volume,
             self.product_c,
             self.product_c2n,
             self.product_ch4,
@@ -187,7 +209,8 @@ def craft_input_file(
         var_mixture: Mixture,
         input_template: Callable[[str, str], str],
         concentration: float,
-        density=None
+        density=None,
+        mass_percent=False,
 ):
     total_moles = 10  # should make no difference but might check that later
     var_moles = concentration * total_moles
@@ -213,7 +236,8 @@ def craft_input_file(
         com_string += key + ","
         com_string += f"{value:.3f}" + ","
 
-    com_string += "mole"
+    if not mass_percent:
+        com_string += "mole"
 
     density_string = ""
 
@@ -262,7 +286,7 @@ def find_density():
         return -1
 
 
-def analyze_output_file(key, out_dict):
+def analyze_output_file(key, out_dict, dens):
     if has_error(output_filepath):
         return
 
@@ -270,6 +294,7 @@ def analyze_output_file(key, out_dict):
     linevals_pattern = re.compile(r'1\.\)\s+(-?\d+\.\d+E[+-]\d+)\s+(-?\d+\.\d+E[+-]\d+)\s+(\S+)\s+(\S+)')
 
     result = Result()
+    result.specific_volume = dens
 
     with open(output_filepath, 'r') as file:
         file_content = file.read()
@@ -351,26 +376,49 @@ if __name__ == '__main__':
 
     results = {}
 
+    # DEBUG LINES - USE FOR SINGLE POINT CHECKS
+
     # craft_input_file(air, c2h6, c2h6_input, 0.01)
     # run_tiger()
     # dens = find_density()
     # craft_input_file(air, c2h6, c2h6_input, 0.01, dens)
     # run_tiger()
-    # analyze_output_file(0.01, results)
+    # analyze_output_file(0.01, results, dens)
 
-    # for conc in [round(i*0.01, 2) for i in range(1, 100)]:
-    for conc in [round(i*0.01, 2) for i in range(1, 41)] + [round(i*0.01, 2) for i in range(45, 96, 5)]:
+    # craft_input_file(an, oil, oil_input, 0.15, 1, mass_percent=True)
+    # run_tiger()
+    # analyze_output_file(0.15, results, 1)
+
+    # END OF DEBUG LINES
+
+    # GAS MIX COMPUTATIONS
+
+    for conc in [round(i*0.01, 2) for i in range(1, 100)]:
+        # for conc in [round(i*0.01, 2) for i in range(1, 11)] + [round(i*0.01, 2) for i in range(15, 96, 5)]:
         print("-------------------")
         print(f"CONC: {conc}")
-        craft_input_file(air, c2h2, c2h2_input, conc)
+        craft_input_file(air, ch4, ch4_input, conc)
         run_tiger()
-        dens = find_density()
-        craft_input_file(air, c2h2, c2h2_input, conc, dens)
+        dens = find_density()  # TODO: it actually gets specific volume, name's a bit misleading
+        craft_input_file(air, ch4, ch4_input, conc, dens)
         run_tiger()
-        analyze_output_file(conc, results)
+        analyze_output_file(conc, results, dens)
         print(f"DONE FOR {conc}")
 
     print(results)
+
+    # SOLID MIX COMPUTATIONS
+
+    # for conc in [round(i*0.01, 2) for i in range(1, 21)]:
+    #     solid_density = 1
+    #     print("-------------------")
+    #     print(f"CONC: {conc}")
+    #     craft_input_file(an, oil, oil_input, conc, solid_density, mass_percent=True)
+    #     run_tiger()
+    #     analyze_output_file(conc, results, solid_density)
+    #     print(f"DONE FOR {conc}")
+    #
+    # print(results)
 
     results_filename = (results_dir + "\\results_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                         + "." + result_format)
