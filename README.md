@@ -6,4 +6,4 @@ It can automatically create input files for a given system and a range of molar 
 
 Paths are windows-style and reference otvdm.exe (https://github.com/otya128/winevdm) which was used to run the 16bit application on windows 10.
 
-The code is dirty and will likely never be updated.
+The code has several TODOs but will likely never be updated.
