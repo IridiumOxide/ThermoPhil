@@ -41,6 +41,9 @@ air = Mixture({
 ch4 = Mixture({
     "ch4": 1,
 })
+c2h2 = Mixture({
+    "c2h2": 1,
+})
 c2h6 = Mixture({
     "c2h6": 1,
 })
@@ -56,6 +59,28 @@ def ch4_input(com_string, density_string):
 for,n2,0.,24465.,0.,n,2
 for,o2,0.,24465.,0.,o,2
 for,ch4,-17830.,24465.,0.,c,1,h,4
+
+reactants reaction
+
+{com_string}
+
+{density_string}
+
+stop"""
+
+
+def c2h2_input(com_string, density_string):
+    return f"""geos, ideal
+
+set,bkw,alpha,0.50
+set,bkw,beta,0.403
+set,bkw,kappa,10.86
+set,bkw,theta,5441
+
+
+for,n2,0.,24465.,0.,n,2
+for,o2,0.,24465.,0.,o,2
+for,c2h2,54350.,24465.,0.,c,2,h,2
 
 reactants reaction
 
@@ -86,15 +111,19 @@ class Result:
     enthalpy: float             # cal/g
 
     product_c: float            # mol/kg
+    product_c2n: float          # mol/kg
     product_ch4: float          # mol/kg
     product_co: float           # mol/kg
     product_co2: float          # mol/kg
     product_h2: float           # mol/kg
     product_h2o: float          # mol/kg
     product_hcn: float          # mol/kg
+    product_hco: float          # mol/kg
     product_n2: float           # mol/kg
     product_nh3: float          # mol/kg
     product_no: float           # mol/kg
+    product_no2: float          # mol/kg
+    product_n2o: float          # mol/kg
     product_o2: float           # mol/kg
     product_total_gas: float    # mol/kg
 
@@ -105,15 +134,19 @@ class Result:
             "temperature": self.temperature,
             "enthalpy": self.enthalpy,
             "product_c": self.product_c,
+            "product_c2n": self.product_c2n,
             "product_ch4": self.product_ch4,
             "product_co": self.product_co,
             "product_co2": self.product_co2,
             "product_h2": self.product_h2,
             "product_h2o": self.product_h2o,
             "product_hcn": self.product_hcn,
+            "product_hco": self.product_hco,
             "product_n2": self.product_n2,
             "product_nh3": self.product_nh3,
             "product_no": self.product_no,
+            "product_no2": self.product_no2,
+            "product_n2o": self.product_n2o,
             "product_o2": self.product_o2,
             "product_total_gas": self.product_total_gas,
         }
@@ -125,15 +158,19 @@ class Result:
             self.temperature,
             self.enthalpy,
             self.product_c,
+            self.product_c2n,
             self.product_ch4,
             self.product_co,
             self.product_co2,
             self.product_h2,
             self.product_h2o,
             self.product_hcn,
+            self.product_hco,
             self.product_n2,
             self.product_nh3,
             self.product_no,
+            self.product_no2,
+            self.product_n2o,
             self.product_o2,
             self.product_total_gas,
         ]
@@ -262,7 +299,7 @@ def analyze_output_file(key, out_dict):
             print("No match found.")
 
         # gas residues
-        prods = ["ch4", "co", "co2", "h2", "h2o", "hcn", "n2", "nh3", "no", "o2"]
+        prods = ["ch4", "c2n", "co", "co2", "h2", "h2o", "hcn", "hco", "n2", "nh3", "no", "no2", "n2o", "o2"]
         for prod in prods:
             regexp = re.compile(fr'\b{prod}\b\s+gas\s+([\d.]+)')
             match = regexp.search(file_content)
@@ -321,13 +358,14 @@ if __name__ == '__main__':
     # run_tiger()
     # analyze_output_file(0.01, results)
 
-    for conc in [round(i*0.01, 2) for i in range(1, 10)] + [round(i * 0.01, 2) for i in range(10, 96, 5)]:
+    # for conc in [round(i*0.01, 2) for i in range(1, 100)]:
+    for conc in [round(i*0.01, 2) for i in range(1, 41)] + [round(i*0.01, 2) for i in range(45, 96, 5)]:
         print("-------------------")
         print(f"CONC: {conc}")
-        craft_input_file(air, c2h6, c2h6_input, conc)
+        craft_input_file(air, c2h2, c2h2_input, conc)
         run_tiger()
         dens = find_density()
-        craft_input_file(air, c2h6, c2h6_input, conc, dens)
+        craft_input_file(air, c2h2, c2h2_input, conc, dens)
         run_tiger()
         analyze_output_file(conc, results)
         print(f"DONE FOR {conc}")
