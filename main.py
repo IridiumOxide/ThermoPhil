@@ -1,6 +1,30 @@
-import subprocess
-import re
+import csv
+import datetime
 import json
+import re
+import subprocess
+from typing import Callable
+
+# FILESYSTEM CONSTANTS
+
+result_format = "csv"
+
+tiger_dir = "C:\\TIGER"
+tiger_executable_name = "TIGER.EXE"
+runnr_filepath = "C:\\otvdm.exe"
+input_filepath = tiger_dir + "\\INPUT"
+output_filepath = tiger_dir + "\\output"
+results_dir = "C:\\"
+
+
+def run_tiger():
+    p = subprocess.Popen([runnr_filepath, tiger_executable_name], cwd=tiger_dir)
+    # p wait causes some weird errors to appear, probably because TIGER return wrong exit codes
+    p.wait()
+
+# END OF CONSTANTS
+
+# MIXTURE DEFINITIONS
 
 
 class Mixture:
@@ -17,21 +41,102 @@ air = Mixture({
 ch4 = Mixture({
     "ch4": 1,
 })
+c2h6 = Mixture({
+    "c2h6": 1,
+})
+
+# END OF MIXTURE DEFINITIONS
+
+# INPUT TEMPLATES (TODO: get formulas from some shared data)
 
 
+def ch4_input(com_string, density_string):
+    return f"""geos, ideal
+
+for,n2,0.,24465.,0.,n,2
+for,o2,0.,24465.,0.,o,2
+for,ch4,-17830.,24465.,0.,c,1,h,4
+
+reactants reaction
+
+{com_string}
+
+{density_string}
+
+stop"""
+
+
+def c2h6_input(com_string, density_string):
+    return f"""geos, ideal
+for,n2,0.,24465.,0.,n,2
+for,o2,0.,24465.,0.,o,2
+for,c2h6,20076.,24465.,0.,c,2,h,6
+{com_string}
+{density_string}
+stop"""
+
+# END OF INPUT TEMPLATES
+
+
+# TODO: reaction products could be configurable...
 class Result:
-    velocity: float  # m/s
-    pressure: float  # atm
-    temperature: float  # K
-    enthalpy: float  # cal/g
+    velocity: float             # m/s
+    pressure: float             # atm
+    temperature: float          # K
+    enthalpy: float             # cal/g
+
+    product_c: float            # mol/kg
+    product_ch4: float          # mol/kg
+    product_co: float           # mol/kg
+    product_co2: float          # mol/kg
+    product_h2: float           # mol/kg
+    product_h2o: float          # mol/kg
+    product_hcn: float          # mol/kg
+    product_n2: float           # mol/kg
+    product_nh3: float          # mol/kg
+    product_no: float           # mol/kg
+    product_o2: float           # mol/kg
+    product_total_gas: float    # mol/kg
 
     def to_dict(self):
         return {
             "velocity": self.velocity,
             "pressure": self.pressure,
             "temperature": self.temperature,
-            "enthalpy": self.enthalpy
+            "enthalpy": self.enthalpy,
+            "product_c": self.product_c,
+            "product_ch4": self.product_ch4,
+            "product_co": self.product_co,
+            "product_co2": self.product_co2,
+            "product_h2": self.product_h2,
+            "product_h2o": self.product_h2o,
+            "product_hcn": self.product_hcn,
+            "product_n2": self.product_n2,
+            "product_nh3": self.product_nh3,
+            "product_no": self.product_no,
+            "product_o2": self.product_o2,
+            "product_total_gas": self.product_total_gas,
         }
+
+    def to_list(self):
+        return [
+            self.velocity,
+            self.pressure,
+            self.temperature,
+            self.enthalpy,
+            self.product_c,
+            self.product_ch4,
+            self.product_co,
+            self.product_co2,
+            self.product_h2,
+            self.product_h2o,
+            self.product_hcn,
+            self.product_n2,
+            self.product_nh3,
+            self.product_no,
+            self.product_o2,
+            self.product_total_gas,
+        ]
 
 
 def result_encoder(obj):
@@ -40,9 +145,14 @@ def result_encoder(obj):
     return obj
 
 
-def craft_input_file(base_mixture: Mixture, var_mixture: Mixture, concentration, density=None):
-    input_location = "C:\\INPUT"
-    total_moles = 10
+def craft_input_file(
+        base_mixture: Mixture,
+        var_mixture: Mixture,
+        input_template: Callable[[str, str], str],
+        concentration: float,
+        density=None
+):
+    total_moles = 10  # should make no difference but might check that later
     var_moles = concentration * total_moles
     base_moles = total_moles - var_moles
 
@@ -75,46 +185,27 @@ def craft_input_file(base_mixture: Mixture, var_mixture: Mixture, concentration,
         return
 
     if density is not None:
-        density_string = f"c-j,p,1.,v,{density}"
+        density_string = f"c-j,p,1.,v,{density}"  # assuming default c-j
 
-# set,bkw,alpha,0.50
-# set,bkw,beta,0.403
-# set,bkw,kappa,10.86
-# set,bkw,theta,5441
-
-    input_template = f"""geos, ideal
-
-for,n2,0.,24465.,0.,n,2
-for,o2,0.,24465.,0.,o,2
-for,ch4,-17830.,24465.,0.,c,1,h,4
-
-reactants reaction
-
-{com_string}
-
-{density_string}
-
-stop"""
+    input_content = input_template(com_string, density_string)
 
     try:
-        with open(input_location, 'w') as file:
-            file.write(input_template)
-        print(f"Content in '{input_location}' has been replaced.")
+        with open(input_filepath, 'w') as file:
+            file.write(input_content)
+        print(f"Content in '{input_filepath}' has been replaced.")
     except FileNotFoundError:
-        print(f"File not found: {input_location}")
+        print(f"File not found: {input_filepath}")
     except Exception as e:
         print(f"An error occurred: {e}")
 
 
 def find_density():
-    output_location = "C:\\output"
-
-    if has_error(output_location):
+    if has_error(output_filepath):
         return -1
 
     pattern = re.compile(r'the standard volume is\s+(-?\d+\.\d+)')
     try:
-        with open(output_location, 'r') as file:
+        with open(output_filepath, 'r') as file:
             file_content = file.read()
 
         match = pattern.search(file_content)
@@ -127,26 +218,15 @@ def find_density():
             print("No match found.")
             return -1
     except FileNotFoundError:
-        print(f"File not found: {output_location}")
+        print(f"File not found: {output_filepath}")
         return -1
     except Exception as e:
         print(f"An error occurred: {e}")
         return -1
 
 
-def run_tiger():
-    tiger_location = "C:\\TIGER"
-    tiger_executable = "TIGER.EXE"
-    runnr_location = "C:\\otvdm.exe"
-    p = subprocess.Popen([runnr_location, tiger_executable], cwd=tiger_location)
-    # p wait causes some weird errors to appear, should look at that
-    p.wait()
-
-
 def analyze_output_file(key, out_dict):
-    output_location = "C:\\output"
-
-    if has_error(output_location):
+    if has_error(output_filepath):
         return
 
     shock_velo_pattern = re.compile(r'the shock velocity is\s+(-?\d+\.\d+E[+-]\d+)')
@@ -154,7 +234,7 @@ def analyze_output_file(key, out_dict):
 
     result = Result()
 
-    with open(output_location, 'r') as file:
+    with open(output_filepath, 'r') as file:
         file_content = file.read()
 
         shock_velo_match = shock_velo_pattern.search(file_content)
@@ -181,6 +261,34 @@ def analyze_output_file(key, out_dict):
         else:
             print("No match found.")
 
+        # gas residues
+        prods = ["ch4", "co", "co2", "h2", "h2o", "hcn", "n2", "nh3", "no", "o2"]
+        for prod in prods:
+            regexp = re.compile(fr'\b{prod}\b\s+gas\s+([\d.]+)')
+            match = regexp.search(file_content)
+            concentration = 0.0
+            if match:
+                concentration = match.group(1)
+            else:
+                print(f'{prod} unmatched!')
+            setattr(result, f'product_{prod}', concentration)
+
+        # total gas residue
+        regexp = re.compile(fr'\btotal\b\s+gas\s+([\d.]+)')
+        match = regexp.search(file_content)
+        concentration = 0.0
+        if match:
+            concentration = match.group(1)
+        result.product_total_gas = concentration
+
+        # solid residues
+        regexp = re.compile(fr'{re.escape("*c")}\s+soli\s+([\d.]+)')
+        match = regexp.search(file_content)
+        concentration = 0.0
+        if match:
+            concentration = match.group(1)
+        result.product_c = concentration
+
     out_dict[key] = result
 
 
@@ -203,26 +311,45 @@ def has_error(filename):
 
 
 if __name__ == '__main__':
-    outputs = {}
 
-    # craft_input_file(air, ch4, 0.11)
+    results = {}
+
+    # craft_input_file(air, c2h6, c2h6_input, 0.01)
     # run_tiger()
     # dens = find_density()
-    # craft_input_file(air, ch4, 0.11, dens)
+    # craft_input_file(air, c2h6, c2h6_input, 0.01, dens)
     # run_tiger()
-    # analyze_output_file(0.11, outputs)
+    # analyze_output_file(0.01, results)
 
-    for conc in [round(i * 0.01, 2) for i in range(1, 100)]:
+    for conc in [round(i*0.01, 2) for i in range(1, 10)] + [round(i * 0.01, 2) for i in range(10, 96, 5)]:
         print("-------------------")
         print(f"CONC: {conc}")
-        craft_input_file(air, ch4, conc)
+        craft_input_file(air, c2h6, c2h6_input, conc)
         run_tiger()
         dens = find_density()
-        craft_input_file(air, ch4, conc, dens)
+        craft_input_file(air, c2h6, c2h6_input, conc, dens)
         run_tiger()
-        analyze_output_file(conc, outputs)
+        analyze_output_file(conc, results)
         print(f"DONE FOR {conc}")
 
-    print(outputs)
-    with open("C:\\results.json", "w") as outfile:
-        json.dump(outputs, outfile, default=result_encoder, indent=2)
+    print(results)
+
+    results_filename = (results_dir + "\\results_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                        + "." + result_format)
+    if result_format == "json":
+        with open(results_filename, "w") as outfile:
+            json.dump(results, outfile, default=result_encoder, indent=2)
+    elif result_format == "csv":
+        with open(results_filename, 'w', newline='') as csv_file:
+            # Create a CSV writer object
+            csv_writer = csv.writer(csv_file)
+
+            # Write the header (column names)
+            header = ["concentration"] + list(Result().__annotations__.keys())
+            csv_writer.writerow(header)
+
+            # Write data for each Result object
+            for key, result in results.items():
+                csv_writer.writerow([key] + result.to_list())
+    else:
+        print("UNKNOWN OUTPUT FORMAT!")
